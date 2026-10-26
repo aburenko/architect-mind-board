@@ -61,6 +61,36 @@ filesystem apart from its state directory. One Uvicorn worker is sufficient.
 reach the app can read and edit all boards. Do not port-forward it to the internet.
 For remote access, use a private VPN or an authenticated HTTPS reverse proxy.
 
+### Public hosts: private SSH access
+
+On an internet-facing host, install [the localhost-only override](deploy/localhost.conf)
+as `/etc/systemd/system/mindboard.service.d/localhost.conf` (create that directory
+first), then reload systemd and restart `mindboard`. This changes the listener to
+`127.0.0.1:8000`; do not open port 8000 in the host or cloud firewall.
+
+From your own computer, use `ssh -N -L 18000:127.0.0.1:8000 user@host`, adding
+`-i` with your private key path if required. Keep that connection open and browse
+to <http://localhost:18000>. SSH encrypts the connection; the service keeps running
+when the tunnel closes. Install Python 3.10+ on the server before creating its
+virtual environment (for example, Python 3.12 on Oracle Linux 9).
+
+### Optional public HTTP on port 80
+
+[The dedicated-host Nginx configuration](deploy/nginx.conf) proxies port 80 to
+FastAPI on `127.0.0.1:8000`. Keep the localhost-only systemd override installed.
+This configuration replaces the main Nginx configuration, so use it only on a
+dedicated host and back up any existing configuration first. It assumes the
+`nginx` service account used by Oracle Linux packages.
+
+On an SELinux-enabled Oracle Linux host, allow the proxy connection with
+`sudo setsebool -P httpd_can_network_connect on`. Enable the `nginx` service and
+allow HTTP in the host firewall and any cloud ingress rules; leave port 8000
+closed. Both services should be enabled to start on boot.
+
+**This exposes every board publicly with no authentication or encryption.**
+Use only for non-sensitive content; add authentication and HTTPS before storing
+private information. Access the application at `http://<host-ip>/`.
+
 ## Backups and existing boards
 
 Use **Export all boards** to download a portable JSON backup; **Import file** adds
