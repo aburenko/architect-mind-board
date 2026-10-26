@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Mind Board – Architecture Studio</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{--white:#fff;--bg:#f1efe9;--panel:#fbfaf6;--card:#fffefb;--ink:#1b1b1a;--mute:#76736b;--line:#d8d4c8;--dot:#cdc8ba;--acc:#d8431f;
 box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -133,13 +132,12 @@ ul.l li{margin-bottom:5px}
 <h1 class="mono">MIND<span>/</span>BOARD</h1>
 <input type="text" id="hname" placeholder="Name of this board" title="Click to rename this board" aria-label="Board name">
 <div class="sp"></div>
-<label class="chk"><input type="checkbox" id="showLinks" checked> AI connections</label>
+<span id="saveStatus" class="hint" role="status" aria-live="polite">Loading boards…</span>
+<label class="chk"><input type="checkbox" id="showLinks" checked> Connections</label>
 <button class="btn pri" id="bNew">+ Sticky</button>
 <button class="btn" id="bRingsTop" title="One circle per hierarchy level">Sort in circles</button>
 <button class="btn" id="bCatTop" title="One column per category">Sort by category</button>
 <button class="btn" id="bUndoTop" title="Put the notes back where they were">Undo sort</button>
-<button class="btn" id="bSort">Sort by AI clusters</button>
-<button class="btn pri" id="bAn">Analyse with AI</button>
 </header>
 <main>
 <div id="board"><div id="cv"><svg id="rings"></svg><svg id="tree"></svg><svg id="lnk"></svg><svg id="lbl"></svg></div>
@@ -152,7 +150,7 @@ ul.l li{margin-bottom:5px}
 <div class="row"><input type="text" id="newBoard" placeholder="Name of a new board"><button class="btn pri" id="bNewBoard">+ New board</button></div>
 <div class="row"><button class="btn" id="bExport" style="flex:1">Export all boards</button><button class="btn" id="bImport" style="flex:1">Import file</button></div>
 <input type="file" id="fileIn" accept=".json,application/json" hidden>
-<p class="hint" style="margin:6px 0 0">Every board has its own notes, connections and categories. All boards are kept automatically in this browser; export a file as a backup or to move to another device.</p>
+<p class="hint" style="margin:6px 0 0">Boards are saved automatically to SQLite on the server and shared across your devices. Wait for “Saved to SQLite” before closing. Export a file for backup. Use one editor at a time; reload to see changes from another device.</p>
 </section>
 <section>
 <h2>Name of this board</h2>
@@ -178,8 +176,17 @@ ul.l li{margin-bottom:5px}
 <div id="res"></div>
 </aside>
 </main>
+<script src="/storage.js"></script>
 <script>
-(function(){
+(async function(){
+var storage;
+try{storage=await window.openMindBoardStorage()}
+catch(e){
+  document.querySelector('#saveStatus').textContent='Cannot load boards. Check the server and reload.';
+  document.querySelector('main').style.display='none';
+  document.querySelectorAll('header input,header button').forEach(function(e){e.disabled=true});
+  return;
+}
 var K='mindboard-v1';
 var STICKY=['#f3d266','#f3a3b9','#8fc3ee','#93d4a3','#f5b684','#c4aeea','#5f5f5f'];
 var LV=['Title','Heading','Subheading','Text','Subtext','Caption'];
@@ -199,7 +206,7 @@ var $=function(s){return document.querySelector(s)};
 var catSel=null,openId=null,keepAt=0,selLink=null;
 var cv=$('#cv'),svg=$('#lnk'),lbl=$('#lbl'),res=$('#res'),statusEl=$('#status'),hl=null;
 var IXK='mindboard-index-v1',IX=(function(){
-  function rd(k){try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}}
+  function rd(k){try{return JSON.parse(storage.getItem(k))}catch(e){return null}}
   var ix=rd(IXK);
   if(ix&&Array.isArray(ix.list)&&ix.list.length){
     if(!ix.list.some(function(x){return x.id===ix.cur}))ix.cur=ix.list[0].id;
@@ -207,21 +214,21 @@ var IXK='mindboard-index-v1',IX=(function(){
   }
   ix={cur:'b1',list:[{id:'b1',name:'',ts:Date.now()}]};
   var old=rd(K);
-  if(old&&old.notes){try{localStorage.setItem('mindboard-board-b1',JSON.stringify(old))}catch(e){}ix.list[0].name=old.name||''}
+  if(old&&old.notes){try{storage.setItem('mindboard-board-b1',JSON.stringify(old))}catch(e){}ix.list[0].name=old.name||''}
   var sv=rd('mindboard-saves-v1');
   if(Array.isArray(sv))sv.forEach(function(r,i){
     if(!r||!r.data||r.id==='backup')return;
     var id='b'+(i+2)+Date.now().toString(36);
     r.data.name=r.name||r.data.name||'';
-    try{localStorage.setItem('mindboard-board-'+id,JSON.stringify(r.data));ix.list.push({id:id,name:r.data.name,ts:r.ts||Date.now()})}catch(e){}
+    try{storage.setItem('mindboard-board-'+id,JSON.stringify(r.data));ix.list.push({id:id,name:r.data.name,ts:r.ts||Date.now()})}catch(e){}
   });
-  try{localStorage.setItem(IXK,JSON.stringify(ix))}catch(e){}
+  try{storage.setItem(IXK,JSON.stringify(ix))}catch(e){}
   return ix;
 })();
 function bkey(id){return 'mindboard-board-'+id}
-var S=(function(){try{var d=JSON.parse(localStorage.getItem(bkey(IX.cur)));if(d&&d.notes)return d}catch(e){}return null})()||{name:'',notes:[],an:null,labels:[],seq:1};
+var S=(function(){try{var d=JSON.parse(storage.getItem(bkey(IX.cur)));if(d&&d.notes)return d}catch(e){}return null})()||{name:'',notes:[],an:null,labels:[],seq:1};
 var _eff=null;
-function save(){_eff=null;try{localStorage.setItem(bkey(IX.cur),JSON.stringify(S))}catch(e){}}
+function save(){_eff=null;try{storage.setItem(bkey(IX.cur),JSON.stringify(S))}catch(e){}}
 function el(t,c,txt){var e=document.createElement(t);if(c)e.className=c;if(txt!=null)e.textContent=txt;return e}
 function status(m){statusEl.textContent=m||''}
 S.cats=S.cats||[];S.notes.forEach(function(n){n.cats=n.cats||[]});
@@ -242,8 +249,7 @@ $('#hname').oninput=function(e){setBoardName(e.target.value,'h')};
 
 function clusterMap(){var m={};if(S.an)S.an.clusters.forEach(function(c,i){c.ids.forEach(function(id){m[id]=i})});return m}
 function fit(){}
-var dl=null;
-function storeIndex(){try{localStorage.setItem(IXK,JSON.stringify(IX))}catch(e){}}
+function storeIndex(){try{storage.setItem(IXK,JSON.stringify(IX))}catch(e){}}
 function snapshot(){return JSON.parse(JSON.stringify(S))}
 function armBtn(b,text){
   clearTimeout(b._t);
@@ -252,7 +258,7 @@ function armBtn(b,text){
   b.dataset.arm='1';b.textContent=text;
   b._t=setTimeout(function(){b.dataset.arm='';b.textContent=b.dataset.orig},3000);
 }
-function blank(name){return {name:name||'',notes:[],an:null,labels:[],seq:1}}
+function blank(name){return {name:name||'',notes:[],an:null,labels:[],seq:1,lv2:1}}
 function applyBoard(d){
   Object.keys(S).forEach(function(k){delete S[k]});
   Object.assign(S,d);
@@ -268,19 +274,19 @@ function applyBoard(d){
 }
 function boardCount(id){
   if(id===IX.cur)return S.notes.length;
-  try{var d=JSON.parse(localStorage.getItem(bkey(id)));return d&&d.notes?d.notes.length:0}catch(e){return 0}
+  try{var d=JSON.parse(storage.getItem(bkey(id)));return d&&d.notes?d.notes.length:0}catch(e){return 0}
 }
 function switchBoard(id){
   if(id===IX.cur)return;
   save();IX.cur=id;storeIndex();
-  var d=null;try{d=JSON.parse(localStorage.getItem(bkey(id)))}catch(e){}
+  var d=null;try{d=JSON.parse(storage.getItem(bkey(id)))}catch(e){}
   applyBoard(d&&d.notes?d:blank(''));
   renderBoards();status('');
 }
 function newBoard(){
   var nm=$('#newBoard').value.trim();
   save();
-  var id='b'+Date.now().toString(36);
+  var id='b'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
   IX.list.push({id:id,name:nm,ts:Date.now()});IX.cur=id;storeIndex();
   applyBoard(blank(nm));
   $('#newBoard').value='';renderBoards();status('New board created. Give it a name above if you like.');
@@ -289,10 +295,10 @@ function deleteBoard(id){
   if(IX.list.length<2)return;
   var wasCur=id===IX.cur;
   IX.list=IX.list.filter(function(x){return x.id!==id});
-  try{localStorage.removeItem(bkey(id))}catch(e){}
+  try{storage.removeItem(bkey(id))}catch(e){}
   if(wasCur){
     IX.cur=IX.list[0].id;storeIndex();
-    var d=null;try{d=JSON.parse(localStorage.getItem(bkey(IX.cur)))}catch(e){}
+    var d=null;try{d=JSON.parse(storage.getItem(bkey(IX.cur)))}catch(e){}
     applyBoard(d&&d.notes?d:blank(''));
   }else storeIndex();
   renderBoards();
@@ -330,16 +336,14 @@ function renderBoards(){
   });
 }
 async function exportFile(){
-  if(!dl){status('Saving files is not available in this view.');return}
   save();
   var boards=IX.list.map(function(it){
     var d=it.id===IX.cur?snapshot():null;
-    if(!d){try{d=JSON.parse(localStorage.getItem(bkey(it.id)))}catch(e){}}
+    if(!d){try{d=JSON.parse(storage.getItem(bkey(it.id)))}catch(e){}}
     return d&&d.notes?{name:it.name||'',data:d}:null;
   }).filter(Boolean);
   var data={app:'mindboard',version:2,exported:new Date().toISOString(),boards:boards};
-  try{await dl.save({filename:'mindboards-'+new Date().toISOString().slice(0,10)+'.json',data:JSON.stringify(data)});status('File saved.')}
-  catch(e){status(e&&e.code==='declined'?'Export cancelled.':'Export failed ('+((e&&e.code)||'error')+').')}
+  window.downloadMindBoards(data);status('Backup downloaded.');
 }
 function importFile(file){
   var rd=new FileReader();
@@ -353,8 +357,8 @@ function importFile(file){
       save();
       var first=null;
       items.forEach(function(b,i){
-        var id='b'+Date.now().toString(36)+i,nm=b.name||b.data.name||'Imported board';
-        try{localStorage.setItem(bkey(id),JSON.stringify(b.data))}catch(e){return}
+        var id='b'+Date.now().toString(36)+i+Math.random().toString(36).slice(2,8),nm=b.name||b.data.name||'Imported board';
+        try{storage.setItem(bkey(id),JSON.stringify(b.data))}catch(e){return}
         IX.list.push({id:id,name:nm,ts:Date.now()});if(!first)first=id;
       });
       if(!first)throw new Error('storage');
@@ -986,49 +990,6 @@ function renderPanel(){
 }
 function short(t){t=(t||'').replace(/\s+/g,' ');return t.length>34?t.slice(0,32)+'\u2026':t}
 
-async function analyse(){
-  if(S.notes.length<2){status('Add at least two notes first.');return}
-  var sample;
-  try{sample=await claude.use('sample')}catch(e){sample=null}
-  if(!sample){status('AI analysis is not available in this view.');return}
-  var btn=$('#bAn');btn.disabled=true;status('Analysing your notes\u2026');
-  var data=S.notes.map(function(n){return {id:n.id,text:n.text,level:LV[n.level==null?3:n.level],type:n.type||undefined,categories:n.cats&&n.cats.length?n.cats.map(function(c){var k=catBy(c);return k&&k.parent?k.parent+' > '+k.name:c}):undefined}});
-  var prompt='You are an experienced architecture studio critic helping a student develop a design project'+(S.name?' called "'+S.name+'"':'')+'.\n'+
-  'Below are the student\'s sticky notes (JSON; "categories" are the student\'s own tags and are hints, not fixed answers; "level" (Heading, Subheading, Text, Subtext) shows how central each note is: headings are main ideas, subtext is detail). Find relationships between them (Zusammenh\u00e4nge), group them into clusters, and point out gaps.\n\n'+JSON.stringify(data)+(S.links.length?'\n\nConnections the student drew themselves (respect these): '+JSON.stringify(S.links.map(function(l){return {a:l.a,b:l.b}})):'')+'\n\n'+
-  'Reply with ONLY valid JSON, no markdown:\n{"clusters":[{"name":"","summary":"","ids":[]}],"links":[{"a":"","b":"","relation":"","strength":1}],"insights":[""],"gaps":[""]}\n'+
-  'Rules: every note id appears in exactly one cluster; 2-6 clusters; cluster names max 3 words; summary one short sentence; 4-15 links, only meaningful ones, relation = a short explanatory phrase of 6-14 words saying HOW and WHY the two notes relate (not just a label), strength 1 (loose) to 3 (strong); '+
-  '3-5 insights that reveal non-obvious design logic, tensions or opportunities; 2-4 open questions the student should still answer. Write in the same language as the notes.';
-  var stage='asking Claude';
-  try{
-    var out=await sample(prompt,{cache:false,onText:function(t){status('Analysing\u2026 ('+t.text.length+' characters received)')}});
-    stage='reading the answer';
-    var raw=out.text||'',a=raw.indexOf('{'),z=raw.lastIndexOf('}');
-    if(a<0||z<a)throw {code:'invalid_json',message:'No JSON found in the reply'+(out.truncated?' (reply was cut short)':'')};
-    var r=JSON.parse(raw.slice(a,z+1));
-    stage='building the board';
-    var ids={};S.notes.forEach(function(n){ids[n.id]=1});
-    var used={},cl=(r.clusters||[]).map(function(c){
-      var list=(c.ids||[]).filter(function(i){if(ids[i]&&!used[i]){used[i]=1;return true}});
-      return {name:String(c.name||'Cluster'),summary:String(c.summary||''),ids:list};
-    }).filter(function(c){return c.ids.length});
-    var rest=S.notes.filter(function(n){return !used[n.id]}).map(function(n){return n.id});
-    if(rest.length)cl.push({name:'Unsorted',summary:'Not yet connected to a theme.',ids:rest});
-    S.an={clusters:cl,
-      links:(r.links||[]).filter(function(l){return ids[l.a]&&ids[l.b]&&l.a!==l.b}).map(function(l){return {a:l.a,b:l.b,relation:String(l.relation||''),strength:Math.min(3,Math.max(1,+l.strength||1))}}),
-      insights:(r.insights||[]).map(String),gaps:(r.gaps||[]).map(String)};
-    S.labels=[];hl=null;save();render();renderPanel();status('Done. Click a cluster to highlight it, or sort the board.');
-  }catch(e){
-    var c=e&&e.code,m=e&&e.message?e.message:String(e);
-    var msg={not_granted:'You declined permission to use Claude. Reload and allow it to run the analysis.',
-      rate_limited:'Rate or usage limit reached \u2013 try again later.',
-      session_expired:'Your session expired \u2013 sign in again.',
-      sampling_disabled:'Claude is not enabled for this account or organization.',
-      upstream_error:'Temporary connection problem \u2013 press the button again.',
-      invalid_json:'Claude\u2019s reply could not be read as data \u2013 press the button again.'}[c];
-    status((msg||'Analysis failed while '+stage+'.')+' ['+(c||'error')+': '+m.slice(0,140)+']');
-  }
-  btn.disabled=false;
-}
 function deleteAnalysis(){
   S.an=null;hl=null;
   S.labels=(S.labels||[]).filter(function(l){return !l.ai});
@@ -1174,8 +1135,6 @@ $('#board').addEventListener('dblclick',function(e){
   if(e.target.closest('.note,.clabel,.ldel,.lnkhit,.ctog'))return;
   var w=toWorld(e.clientX,e.clientY);newSticky(w.x-107,w.y-20);
 });
-$('#bAn').onclick=analyse;
-$('#bSort').onclick=sortBoard;
 $('#showLinks').onchange=drawLinks;
 $('#bCat').onclick=addCat;
 $('#bNewBoard').onclick=newBoard;
@@ -1191,7 +1150,7 @@ $('#sortSel').onchange=function(){if(catSel){if(this.checked){relayoutSel();fitA
 $('#bEx').onclick=function(){
   
   var EXC={Site:'Site & Context',Context:'Site & Context',Circulation:'Site & Context',Concept:'Design Idea',Light:'Design Idea',Program:'Design Idea',Structure:'Technical',Material:'Technical',Question:'Open Questions'};
-  EX.forEach(function(e){ensureCat(EXC[e[0]]);addNote(e[1],'',[EXC[e[0]]])});save();render();renderCats();status('Example loaded. Press "Analyse with AI".');
+  EX.forEach(function(e){ensureCat(EXC[e[0]]);addNote(e[1],'',[EXC[e[0]]])});save();render();renderCats();status('Example loaded. Drag notes to arrange them or sort by category.');
 };
 $('#bClr').onclick=function(){
   if(!S.notes.length)return;
@@ -1203,7 +1162,6 @@ $('#bRingsTop').onclick=$('#bRings').onclick;
 $('#bCatTop').onclick=$('#bSortCat').onclick;
 $('#bUndoTop').onclick=$('#bUnsort').onclick;
 applyView();render();renderPanel();renderCats();renderBoards();
-try{if(window.claude&&claude.use)claude.use('downloads').then(function(d){dl=d;if(!d)$('#bExport').style.display='none'}).catch(function(){$('#bExport').style.display='none'})}catch(e){}
 })();
 </script>
 </body>

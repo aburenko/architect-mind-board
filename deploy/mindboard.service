@@ -1,0 +1,24 @@
+[Unit]
+Description=Mind Board (FastAPI and SQLite)
+After=network.target
+
+[Service]
+Type=simple
+User=mindboard
+Group=mindboard
+WorkingDirectory=/opt/mindboard
+Environment=MINDBOARD_DB=/var/lib/mindboard/mindboard.sqlite3
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/mindboard/.venv/bin/uvicorn app:app --host 0.0.0.0 --port 8000 --workers 1
+Restart=on-failure
+RestartSec=3
+StateDirectory=mindboard
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
